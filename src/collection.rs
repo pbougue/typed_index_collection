@@ -1,4 +1,4 @@
-//! Collections of objects with typed indices and buildin identifier support.
+//! Collections of objects with typed indices and builtin identifier support.
 
 use crate::error::Error;
 use derivative::Derivative;
@@ -421,6 +421,14 @@ impl<T: Id<T>> From<T> for CollectionWithId<T> {
     }
 }
 
+/// The type returned by `CollectionWithId::values_mut`.
+pub type IterMut<'a, T> = iter::Map<
+    iter::Enumerate<
+        std::iter::Zip<slice::IterMut<'a, T>, slice::Iter<'a, &'a mut CollectionWithId<T>>>,
+    >,
+    fn((usize, (&'a mut T, &&'a mut CollectionWithId<T>))) -> (Idx<T>, RefMut<'a, T>),
+>;
+
 impl<T: Id<T>> CollectionWithId<T> {
     /// Creates a `CollectionWithId` from a `Vec`. Fails if there is
     /// duplicates in identifiers.
@@ -551,6 +559,51 @@ impl<T: Id<T>> CollectionWithId<T> {
     /// ```
     pub fn get_mut(&mut self, id: &str) -> Option<RefMut<'_, T>> {
         self.get_idx(id).map(move |idx| self.index_mut(idx))
+    }
+
+    /// Iterates over mutable references of the `CollectionWithId`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use typed_index_collection::CollectionWithId;
+    ///
+    /// #[derive(PartialEq, Debug)]
+    /// struct Obj(&'static str);
+    ///
+    /// impl Id<Obj> for Obj {
+    ///     fn id(&self) -> &str { self.0 }
+    ///     fn set_id(&mut self, id: String) { unimplemented!(); }
+    /// }
+    ///
+    /// let mut c = CollectionWithId::new(vec![Obj("foo"), Obj("bar")]).unwrap();
+    /// let n = vec!["fii", "ber"]
+    /// for (elem, new) in c.values_mut().zip(n.iter()) {
+    ///     elem.0 = new
+    ///}
+    /// assert!(!c.contains_id("foo"));
+    /// assert!(!c.contains_id("bar"));
+    /// assert!(c.contains_id("fii"));
+    /// assert!(c.contains_id("ber"));
+    /// assert_eq!(Some(&Obj("ber")), c.get("ber"));
+    /// ```
+    pub fn values_mut(&mut self) -> IterMut<T> {
+        let v = vec![self];
+
+        self.objects
+            .iter_mut()
+            .zip(v.iter())
+            .enumerate()
+            .map(|(idx, (obj, coll))| {
+                (
+                    Idx::new(idx),
+                    RefMut {
+                        idx: Idx::new(idx),
+                        old_id: obj.id().to_string(),
+                        collection: *coll,
+                    },
+                )
+            })
     }
 
     /// Push an element in the `CollectionWithId`.  Fails if the
